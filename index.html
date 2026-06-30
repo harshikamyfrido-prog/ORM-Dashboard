@@ -256,8 +256,8 @@ footer.foot{text-align:center;color:var(--muted);font-size:11.5px;margin-top:30p
   <div class="shell" style="padding:0;">
     <div class="top-row">
       <div>
-        
-        <h1 class="brand">Frido - Online Reputation Management</h1>
+        <div class="brand-eyebrow">Online Reputation Management</div>
+        <h1 class="brand">Frido</h1>
         <div class="brand-sub">Live mentions, response times and sentiment across Facebook & Instagram, broken down by shift and agent.</div>
       </div>
       <div class="status-cluster">
@@ -656,14 +656,18 @@ function getFiltered(){
 /* ============================================================
    METRIC COMPUTATION
    ============================================================ */
+function uniqueTicketCount(rows){
+  return new Set(rows.map(r=>r.ticket)).size;
+}
+
 function computeMetrics(rows){
-  const total = rows.length;
-  const fb = rows.filter(r=>r.sourceGroup==="Facebook").length;
-  const ig = rows.filter(r=>r.sourceGroup==="Instagram").length;
-  const pos = rows.filter(r=>r.sentiment==="Positive").length;
-  const neg = rows.filter(r=>r.sentiment==="Negative").length;
-  const neu = rows.filter(r=>r.sentiment==="Neutral").length;
-  const mix = rows.filter(r=>r.sentiment==="Mixed").length;
+  const total = uniqueTicketCount(rows);
+  const fb = uniqueTicketCount(rows.filter(r=>r.sourceGroup==="Facebook"));
+  const ig = uniqueTicketCount(rows.filter(r=>r.sourceGroup==="Instagram"));
+  const pos = uniqueTicketCount(rows.filter(r=>r.sentiment==="Positive"));
+  const neg = uniqueTicketCount(rows.filter(r=>r.sentiment==="Negative"));
+  const neu = uniqueTicketCount(rows.filter(r=>r.sentiment==="Neutral"));
+  const mix = uniqueTicketCount(rows.filter(r=>r.sentiment==="Mixed"));
   const frtVals = rows.map(r=>r.frtSec).filter(v=>v!==null && v!==undefined);
   const artVals = rows.map(r=>r.artSec).filter(v=>v!==null && v!==undefined);
   const avgFrt = frtVals.length ? frtVals.reduce((a,b)=>a+b,0)/frtVals.length : null;
@@ -674,8 +678,8 @@ function computeMetrics(rows){
     return null;
   }).filter(v=>v!==null);
   const avgCombined = combinedPerTicket.length ? combinedPerTicket.reduce((a,b)=>a+b,0)/combinedPerTicket.length : null;
-  const slaBreach = rows.filter(r=>r.sla).length;
-  const replied = rows.filter(r=>r.hasReply).length;
+  const slaBreach = uniqueTicketCount(rows.filter(r=>r.sla));
+  const replied = uniqueTicketCount(rows.filter(r=>r.hasReply));
   const replyRate = total ? (replied/total*100) : 0;
   return {total, fb, ig, pos, neg, neu, mix, avgFrt, avgArt, sumFrtArt, avgCombined, slaBreach, replied, replyRate};
 }
@@ -766,8 +770,9 @@ function destroyChart(key){ if(CHARTS[key]){ CHARTS[key].destroy(); delete CHART
 function renderCharts(rows, m){
   if(typeof Chart === "undefined"){ return; } // library still loading/falling back; renderAll() will be re-invoked once ready
   // Trend over time
-  const byDay = {};
-  rows.forEach(r=>{ if(r.dayKey) byDay[r.dayKey] = (byDay[r.dayKey]||0)+1; });
+  const byDaySets = {};
+  rows.forEach(r=>{ if(r.dayKey) (byDaySets[r.dayKey] = byDaySets[r.dayKey] || new Set()).add(r.ticket); });
+  const byDay = {}; Object.keys(byDaySets).forEach(d=> byDay[d]=byDaySets[d].size );
   const days = Object.keys(byDay).sort();
   destroyChart("trend");
   CHARTS.trend = new Chart(document.getElementById("trendChart"), {
@@ -799,14 +804,19 @@ function renderCharts(rows, m){
   destroyChart("shiftSentiment");
   CHARTS.shiftSentiment = new Chart(document.getElementById("shiftSentimentChart"), {
     type:"bar",
-    data:{ labels: shifts, datasets: sentTypes.map((s,i)=>({ label:s, data: shifts.map(sh=>rows.filter(r=>r.shift===sh && r.sentiment===s).length), backgroundColor: sentColors[i] })) },
+    data:{ labels: shifts, datasets: sentTypes.map((s,i)=>({ label:s, data: shifts.map(sh=>uniqueTicketCount(rows.filter(r=>r.shift===sh && r.sentiment===s))), backgroundColor: sentColors[i] })) },
     options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:"bottom",labels:{boxWidth:10,font:{size:11}}}}, scales:{ x:{stacked:true, grid:{display:false}}, y:{stacked:true, grid:{color:palette.grid}} } }
   });
 
   // Agent leaderboard
-  const agentCounts = {};
-  const agentBreach = {};
-  rows.forEach(r=>{ agentCounts[r.agent]=(agentCounts[r.agent]||0)+1; if(r.sla) agentBreach[r.agent]=(agentBreach[r.agent]||0)+1; });
+  const agentTicketSets = {};
+  const agentBreachSets = {};
+  rows.forEach(r=>{
+    (agentTicketSets[r.agent] = agentTicketSets[r.agent] || new Set()).add(r.ticket);
+    if(r.sla) (agentBreachSets[r.agent] = agentBreachSets[r.agent] || new Set()).add(r.ticket);
+  });
+  const agentCounts = {}; Object.keys(agentTicketSets).forEach(a=> agentCounts[a]=agentTicketSets[a].size );
+  const agentBreach = {}; Object.keys(agentBreachSets).forEach(a=> agentBreach[a]=agentBreachSets[a].size );
   const topAgents = Object.entries(agentCounts).sort((a,b)=>b[1]-a[1]).slice(0,10);
   destroyChart("agent");
   CHARTS.agent = new Chart(document.getElementById("agentChart"), {
